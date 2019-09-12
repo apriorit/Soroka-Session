@@ -1,0 +1,27 @@
+version: '3'
+
+services:
+  sessions.consul:
+    build: ./consul
+    ports: 
+      - 38500:8500
+    networks:
+      - app-network
+  sessions.service:
+    build: ./service
+    depends_on:
+      - sessions.consul
+    ports:
+      - 8443:443
+    networks:
+      - app-network
+    volumes:
+      - ../sessionssvc:/bin/sessionssvc
+      - ./service/run_service.sh:/bin/run_service.sh
+      - ./service/serv.crt:/serv.crt
+      - ./service/serv.key:/serv.key
+
+networks:
+  app-network:
+    external:
+      name: local-docker-dev-network
