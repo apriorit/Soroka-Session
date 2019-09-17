@@ -52,6 +52,8 @@ func main() {
 	c.LogAndTerminateOnError(err, "obtain certificate key")
 	privateKeyData, err := ConsulGetKey(consulStorage, *privateKey)
 	c.LogAndTerminateOnError(err, "obtain private key")
+	//Save public key
+	c.SetPublicKey(certKeyData)
 
 	signSecret, err := ConsulGetKey(consulStorage, *secret)
 	c.LogAndTerminateOnError(err, "obtain secret")

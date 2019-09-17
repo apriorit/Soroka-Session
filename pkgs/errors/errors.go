@@ -18,4 +18,5 @@ var (
 	ErrRequestToUsersFailed = errors.New(c.RequestToUsersFailed)
 	ErrClientUnkown         = errors.New(c.ClientUnkown)
 	ErrFailedToCreateJWT    = errors.New(c.FailedToCreateJWT)
+	ErrPublicKeyIsMissing   = errors.New(c.PublicKeyIsMissing)
 )

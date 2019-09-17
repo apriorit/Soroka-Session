@@ -12,7 +12,7 @@ services:
     depends_on:
       - sessions.consul
     ports:
-      - 8443:443
+      - 9443:443
     networks:
       - app-network
     volumes:

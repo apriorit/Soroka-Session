@@ -19,8 +19,10 @@ type SessionsServiceStub struct {
 
 //NewSessionsService creates session service
 func NewSessionsService(s string) m.SessionService {
+	cl, _ := MakeHTTPClient()
+
 	return &SessionsServiceStub{
-		client: &http.Client{},
+		client: cl,
 		secret: s,
 		Logger: cfg.GetLogger().Logger,
 	}
@@ -81,12 +83,15 @@ func (sStub *SessionsServiceStub) Logout(ctx context.Context, lod m.LogoutData) 
 
 //CheckToken checks whether an access token is valid and regenerates it if so
 func (sStub *SessionsServiceStub) CheckToken(ctx context.Context, td m.CheckTokenServiceInput) (res m.CheckTokenServiceOutput, err error) {
+	sStub.Logger.Log("method", "CheckTokenAccess", "access", td.AccessToken, "refresh", td.RefreshToken)
 	//1. Check whether tokens are valid (signed with HMAC method and our service secret)
 	accessTokenClaims, err := sStub.CheckTokenValidness(td.AccessToken)
 	if err != nil {
+		sStub.Logger.Log("method", "After CheckTokenValidness")
 		return res, err
 	}
 
+	sStub.Logger.Log("method", "CheckTokenRefresh", "access", td.AccessToken, "refresh", td.RefreshToken)
 	refreshTokenClaims, err := sStub.CheckTokenValidness(td.RefreshToken)
 	if err != nil {
 		return res, err

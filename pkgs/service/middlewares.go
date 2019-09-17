@@ -42,7 +42,7 @@ func (lmw loggingMiddleware) Logout(ctx context.Context, lod m.LogoutData) (err 
 
 func (lmw loggingMiddleware) CheckToken(ctx context.Context, ctd m.CheckTokenServiceInput) (res m.CheckTokenServiceOutput, err error) {
 	defer func(begin time.Time) {
-		lmw.logger.Log("method", "Login", "token", ctd.AccessToken, "took", time.Since(begin), "err", err)
+		lmw.logger.Log("method", "CheckToken", "token", ctd.AccessToken, "took", time.Since(begin), "err", err)
 	}(time.Now())
 	return lmw.next.CheckToken(ctx, ctd)
 }

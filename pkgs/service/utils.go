@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 
 	jwt "github.com/dgrijalva/jwt-go"
 
+	cf "github.com/Soroka-EDMS/svc/sessions/pkgs/config"
 	c "github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
 	e "github.com/Soroka-EDMS/svc/sessions/pkgs/errors"
 	m "github.com/Soroka-EDMS/svc/sessions/pkgs/models"
@@ -18,6 +21,8 @@ import (
 
 //EnsureUserCreds sends authentification request to Users service
 func (sStub *SessionsServiceStub) EnsureUserCreds(username, password string) (err error) {
+
+	sStub.Logger.Log("method", "EnsureUserCreds", "username", username, "password", password)
 
 	req, err := http.NewRequest("GET", c.URIOnAuthentification, nil)
 	req.SetBasicAuth(username, password)
@@ -28,7 +33,7 @@ func (sStub *SessionsServiceStub) EnsureUserCreds(username, password string) (er
 
 	resp, err := sStub.client.Do(req)
 	if err != nil {
-		return e.ErrRequestToUsersFailed
+		return err
 	}
 
 	switch resp.StatusCode {
@@ -42,10 +47,6 @@ func (sStub *SessionsServiceStub) EnsureUserCreds(username, password string) (er
 		return fmt.Errorf("Authentification request failed with code: %v", resp.StatusCode)
 	}
 
-	if !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
-		return fmt.Errorf("Authentification request received content type: %v", resp.Header.Get("Content-Type"))
-	}
-
 	return nil
 }
 
@@ -56,10 +57,10 @@ func (sStub *SessionsServiceStub) GetUserProfile(email, token string) (profile m
 		return m.UserProfile{}, err
 	}
 
-	req.Header.Add("Bearer", token)
+	req.Header.Add("Authorization", "Bearer "+token)
 	resp, err := sStub.client.Do(req)
 	if err != nil {
-		return m.UserProfile{}, e.ErrRequestToUsersFailed
+		return m.UserProfile{}, err
 	}
 
 	switch resp.StatusCode {
@@ -144,25 +145,24 @@ func CreatePayload(tokenType, cid, iss string, mask int64) (jwt.MapClaims, int64
 
 //CheckTokenValidness parses token and return its claims if token is valid. There is a 'Valid' flag in token that is triggered when using jwt.Parse
 func (sStub *SessionsServiceStub) CheckTokenValidness(tokenString string) (jwt.MapClaims, error) {
-	//Prepare key func
-	keyFunc := func(token *jwt.Token) (interface{}, error) {
+	sStub.Logger.Log("method", "CheckTokenValidness", "begin", "begin")
+	//Get raw token
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
 		}
 
 		//return session secret that was used in signing process
 		return []byte(sStub.secret), nil
-	}
-
-	//Get raw token
-	token, err := jwt.Parse(tokenString, keyFunc)
+	})
 
 	//Check token validness
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		sStub.Logger.Log("method", "CheckTokenValidness", "begin3", "begin3")
 		return claims, nil
 	}
 
-	//Log and return error of token is invalid
+	//Log and return error if token is invalid
 	sStub.Logger.Log("method", "GetRawToken", "err", err)
 	return jwt.MapClaims{}, e.ErrNonAuthorized
 }
@@ -175,4 +175,27 @@ func IsExpired(claims jwt.MapClaims) bool {
 //EncodeSessionSecret encodes session secret to base64 string
 func EncodeSessionSecret(s string) (encoded string) {
 	return b.StdEncoding.EncodeToString([]byte(s))
+}
+
+func MakeHTTPClient() (*http.Client, error) {
+	//Get public key
+	pkey := cf.GetPublicKey()
+
+	if len(pkey) == 0 {
+		return nil, e.ErrPublicKeyIsMissing
+	}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(pkey)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:            caCertPool,
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	return client, nil
 }

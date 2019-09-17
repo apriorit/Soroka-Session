@@ -4,10 +4,10 @@ const (
 	LoginEndpoint         string = "/session/login"
 	LogoutEndpoint        string = "/session/logout"
 	CheckTokenEndpoint    string = "/session/check_token"
-	URIOnGetProfile       string = "https://edms.com/api/v1/user?email=%v"
-	URIOnAuthentification string = "https://edms.com/api/v1/user_auth"
+	URIOnGetProfile       string = "https://users_users.service_1:443/user?email=%v"
+	URIOnAuthentification string = "https://users_users.service_1:443/users/check_auth"
 	TokenIssuer           string = "https://edms.com/sessions"
-
+	PublicKeyIsMissing    string = "Public key is missing"
 	RequestToUsersFailed  string = "Request to Users service failed"
 	MissingBody           string = "Missing content in request body"
 	MissingRefreshToken   string = "Missing refresh token"
