@@ -11,12 +11,7 @@ type LoggerSingleton struct {
 	Logger log.Logger
 }
 
-type publicKey struct {
-	pubKey []byte
-}
-
 var loggerConfig *LoggerSingleton
-var pkey *publicKey
 
 func GetLogger() *LoggerSingleton {
 	if loggerConfig == nil {
@@ -33,21 +28,4 @@ func GetLogger() *LoggerSingleton {
 		}
 	}
 	return loggerConfig
-}
-
-func GetPublicKey() []byte {
-	if pkey == nil {
-		pkey = &publicKey{
-			pubKey: make([]byte, 0),
-		}
-	}
-	return pkey.pubKey
-}
-
-func SetPublicKey(key []byte) {
-	if pkey == nil {
-		pkey = &publicKey{
-			pubKey: key,
-		}
-	}
 }

@@ -10,15 +10,15 @@ import (
 	httptransport "github.com/go-kit/kit/transport/http"
 	"github.com/gorilla/mux"
 
-	conf "github.com/Soroka-EDMS/svc/sessions/pkgs/config"
-	c "github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
-	e "github.com/Soroka-EDMS/svc/sessions/pkgs/endpoints"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/config"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/endpoints"
 	"github.com/Soroka-EDMS/svc/sessions/pkgs/errors"
-	m "github.com/Soroka-EDMS/svc/sessions/pkgs/models"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/models"
 )
 
 //MakeHTTPHandler wraps all service handlers in one HTTP handler
-func MakeHTTPHandler(endp e.SessionsEndpoints, logger log.Logger) http.Handler {
+func MakeHTTPHandler(endp endpoints.SessionsEndpoints, logger log.Logger) http.Handler {
 	r := mux.NewRouter()
 
 	options := []httptransport.ServerOption{
@@ -30,21 +30,21 @@ func MakeHTTPHandler(endp e.SessionsEndpoints, logger log.Logger) http.Handler {
 	// GET     /session/logout                     restoke refresh token from cookie
 	// PUT     /session/check_token                checks whether an access token is valid (contain valid priveledges and not expired). Regenerates token if expired
 
-	r.Methods("GET").Path(c.LoginEndpoint).Handler(httptransport.NewServer(
+	r.Methods("GET").Path(constants.LoginEndpoint).Handler(httptransport.NewServer(
 		endp.LoginEndpoint,
 		DecodeLoginRequest,
 		encodeLoginResponse,
 		options...,
 	))
 
-	r.Methods("GET").Path(c.LogoutEndpoint).Handler(httptransport.NewServer(
+	r.Methods("GET").Path(constants.LogoutEndpoint).Handler(httptransport.NewServer(
 		endp.LogoutEndpoint,
 		DecodeLogoutRequest,
 		encodeLogoutResponse,
 		options...,
 	))
 
-	r.Methods("POST").Path(c.CheckTokenEndpoint).Handler(httptransport.NewServer(
+	r.Methods("POST").Path(constants.CheckTokenEndpoint).Handler(httptransport.NewServer(
 		endp.CheckTokenEndpoint,
 		DecodeCheckTokenRequest,
 		encodeCheckTokenResponse,
@@ -55,7 +55,7 @@ func MakeHTTPHandler(endp e.SessionsEndpoints, logger log.Logger) http.Handler {
 }
 
 func DecodeLoginRequest(_ context.Context, r *http.Request) (request interface{}, err error) {
-	var req m.LoginData
+	var req models.LoginData
 	user, pass, ok := r.BasicAuth()
 
 	if !ok {
@@ -65,11 +65,11 @@ func DecodeLoginRequest(_ context.Context, r *http.Request) (request interface{}
 	req.UserName = user
 	req.Password = pass
 
-	return e.LoginRequest{Req: req}, nil
+	return endpoints.LoginRequest{Req: req}, nil
 }
 
 func encodeLoginResponse(ctx context.Context, w http.ResponseWriter, response interface{}) error {
-	e, ok := response.(e.LoginResponse)
+	e, ok := response.(endpoints.LoginResponse)
 	if !ok {
 		return errors.ErrEncoding
 	}
@@ -79,32 +79,31 @@ func encodeLoginResponse(ctx context.Context, w http.ResponseWriter, response in
 		return err
 	}
 
-	AddCookie(w, "new", &e.RefreshToken)
-	conf.GetLogger().Logger.Log("refresh_token", e.RefreshToken.Token)
+	AddCookie(w, e.RefreshToken.Token, e.RefreshToken.ExpirationDate)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	return json.NewEncoder(w).Encode(e.AccessToken)
 }
 
 func DecodeLogoutRequest(_ context.Context, r *http.Request) (request interface{}, err error) {
-	var req m.LogoutData
+	var req models.LogoutData
 	req.Cookie, err = r.Cookie("refresh_token")
 
 	if err != nil {
 		return nil, errors.ErrNonAuthorized
 	}
 
-	return e.LogoutRequest{Req: req}, nil
+	return endpoints.LogoutRequest{Req: req}, nil
 }
 
 func encodeLogoutResponse(ctx context.Context, w http.ResponseWriter, response interface{}) error {
-	AddCookie(w, "expired", nil)
+	AddCookie(w, "", 0)
 	return nil
 }
 
 func DecodeCheckTokenRequest(_ context.Context, r *http.Request) (request interface{}, err error) {
-	var reqAnotherService m.CheckTokenAnotherServiceInput
-	var reqCurrentService m.CheckTokenServiceInput
+	var reqAnotherService models.CheckTokenAnotherServiceInput
+	var reqCurrentService models.CheckTokenServiceInput
 
 	//Parse request body and get access token
 	if r.Body == nil {
@@ -122,13 +121,13 @@ func DecodeCheckTokenRequest(_ context.Context, r *http.Request) (request interf
 	}
 	reqCurrentService.RefreshToken = cookie.Value
 
-	conf.GetLogger().Logger.Log("a", reqCurrentService.AccessToken, "r", reqCurrentService.RefreshToken)
+	config.GetLogger().Logger.Log("a", reqCurrentService.AccessToken, "r", reqCurrentService.RefreshToken)
 
-	return e.CheckTokenRequest{Req: reqCurrentService}, nil
+	return endpoints.CheckTokenRequest{Req: reqCurrentService}, nil
 }
 
 func encodeCheckTokenResponse(ctx context.Context, w http.ResponseWriter, response interface{}) error {
-	e, ok := response.(e.CheckTokenResponse)
+	e, ok := response.(endpoints.CheckTokenResponse)
 	if !ok {
 		return errors.ErrEncoding
 	}
@@ -147,7 +146,7 @@ func encodeError(_ context.Context, err error, w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(errCode)
 
-	json.NewEncoder(w).Encode(m.ErrorResponse{
+	json.NewEncoder(w).Encode(models.ErrorResponse{
 		Reason:  errReason,
 		Message: err.Error(),
 	})
@@ -156,15 +155,17 @@ func encodeError(_ context.Context, err error, w http.ResponseWriter) {
 func codeFrom(err error) (int, string) {
 	switch err {
 	case errors.ErrMissingBody:
-		return http.StatusBadRequest, c.MissingBody
+		return http.StatusBadRequest, constants.MissingBody
 	case errors.ErrMalformedBody:
-		return http.StatusBadRequest, c.MalformedBody
+		return http.StatusBadRequest, constants.MalformedBody
 	case errors.ErrMisingRefreshToken:
-		return http.StatusUnauthorized, c.MissingRefreshToken
+		return http.StatusUnauthorized, constants.MissingRefreshToken
+	case errors.ErrInvalidClaimInToken:
+		return http.StatusUnauthorized, constants.InvalidClaimInToken
 	case errors.ErrNonAuthorized:
-		return http.StatusUnauthorized, c.NonAuthorized
+		return http.StatusUnauthorized, constants.NonAuthorized
 	case errors.ErrEncoding:
-		return http.StatusInternalServerError, c.Encoding
+		return http.StatusInternalServerError, constants.Encoding
 	default:
 		return http.StatusInternalServerError, err.Error()
 	}

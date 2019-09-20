@@ -2,6 +2,10 @@
 
 echo "Adding keys to k/v storage..."
 
+# add connection string to consul
+DB_CONNECTION="stub"
+curl -X PUT --data-binary "$DB_CONNECTION" http://$CONSUL_HOST_ADDR/v1/kv/$SESSIONS_DB_KEY
+
 #Add public key to consul
 cat /serv.crt
 curl -X PUT --data-binary @/serv.crt http://$CONSUL_HOST_ADDR/v1/kv/$PUBLIC_KEY
@@ -20,4 +24,4 @@ chmod +x /bin/sessionssvc
 /bin/sessionssvc -consul.address $CONSUL_HOST_ADDR \
  - consul.tls.pubkey $PUBLIC_KEY \
  - consul.tls.privkey $PRIVATE_KEY \
- - consul.service.secret $SESSIONS_SECRET
+ - consul.service.signingKey $SESSIONS_SECRET

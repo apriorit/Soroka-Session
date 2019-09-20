@@ -11,10 +11,11 @@ import (
 
 	"github.com/oklog/run"
 
-	c "github.com/Soroka-EDMS/svc/sessions/pkgs/config"
-	e "github.com/Soroka-EDMS/svc/sessions/pkgs/endpoints"
-	h "github.com/Soroka-EDMS/svc/sessions/pkgs/handlers"
-	s "github.com/Soroka-EDMS/svc/sessions/pkgs/service"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/config"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/db"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/endpoints"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/handlers"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/service"
 )
 
 func main() {
@@ -23,54 +24,59 @@ func main() {
 	var (
 		httpAddr   = flag.String("address", ":443", "")
 		consulAddr = flag.String("consul.address", "localhost:8500", "Consul agent address")
+		conn       = flag.String("consul.sessionsdb", "sessionsdb", "database connection string")
 		certKey    = flag.String("consul.tls.pubkey", "tls/pubKey", "tls certificate")
 		privateKey = flag.String("consul.tls.privkey", "tls/privKey", "tls private key")
-		secret     = flag.String("consul.service.secret", "service/secret", "Secret to sign JWT")
+		signingKey = flag.String("consul.service.signingKey", "service/signingKey", "Secret key to sign JWT")
 	)
 
 	//Parse CLI parameters
 	flag.Parse()
 
 	//Get global logger
-	logger := c.GetLogger().Logger
+	logger := config.GetLogger().Logger
 
 	//Log CLI parameters
 	logger.Log(
 		"address", *httpAddr,
 		"consul.address", *consulAddr,
+		"consul.sessionsdb", *conn,
 		"consul.tls.pubkey", *certKey,
 		"consul.tls.privkey", *privateKey,
-		"consul.service.secret", *secret,
+		"consul.service.secret", *signingKey,
 	)
 
 	//Obtain consul k/v storage
 	consulStorage, err := GetConsulClient(*consulAddr)
-	c.LogAndTerminateOnError(err, "create consul client")
+	config.LogAndTerminateOnError(err, "create consul client")
 
 	//Obtain tls pair (raw)
 	certKeyData, err := ConsulGetKey(consulStorage, *certKey)
-	c.LogAndTerminateOnError(err, "obtain certificate key")
+	config.LogAndTerminateOnError(err, "obtain certificate key")
 	privateKeyData, err := ConsulGetKey(consulStorage, *privateKey)
-	c.LogAndTerminateOnError(err, "obtain private key")
-	//Save public key
-	c.SetPublicKey(certKeyData)
+	config.LogAndTerminateOnError(err, "obtain private key")
 
-	signSecret, err := ConsulGetKey(consulStorage, *secret)
-	c.LogAndTerminateOnError(err, "obtain secret")
+	signSecret, err := ConsulGetKey(consulStorage, *signingKey)
+	config.LogAndTerminateOnError(err, "obtain secret")
 
 	//Get kpair from raw data
 	logger.Log("pub", string(certKeyData), "priv", string(privateKeyData))
 	cert, err := tls.X509KeyPair(certKeyData, privateKeyData)
-	c.LogAndTerminateOnError(err, "create cert from raw key pair data")
+	config.LogAndTerminateOnError(err, "create cert from raw key pair data")
+
+	//Create sessions database
+	rawConnectionStr, err := ConsulGetKey(consulStorage, *conn)
+	config.LogAndTerminateOnError(err, "obtain database connection string")
+
+	dbs, err := db.Connection(logger, string(rawConnectionStr))
 
 	//Build service layers
 	var handler http.Handler
 	{
 		logger.Log("Loading", "Creating Session service...")
-		logger.Log("Sign secret", string(signSecret))
-		svc := s.Build(logger, string(signSecret))
-		endp := e.MakeServerEndpoints(svc)
-		handler = h.MakeHTTPHandler(endp, logger)
+		svc := service.Build(logger, dbs, signSecret, certKeyData)
+		endp := endpoints.MakeServerEndpoints(svc)
+		handler = handlers.MakeHTTPHandler(endp, logger)
 	}
 
 	logger.Log("Loading", "Starting Session service...")
@@ -78,7 +84,7 @@ func main() {
 	{
 		tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
 		httpsListener, err := tls.Listen("tcp", *httpAddr, tlsConfig)
-		c.LogAndTerminateOnError(err, "create https listener")
+		config.LogAndTerminateOnError(err, "create https listener")
 
 		g.Add(func() error {
 			logger.Log("transport", "https", "addr", *httpAddr)

@@ -4,35 +4,45 @@ import (
 	"context"
 	"net/http"
 
+	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/go-kit/kit/log"
 
-	cfg "github.com/Soroka-EDMS/svc/sessions/pkgs/config"
-	e "github.com/Soroka-EDMS/svc/sessions/pkgs/errors"
-	m "github.com/Soroka-EDMS/svc/sessions/pkgs/models"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/config"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/errors"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/models"
 )
 
-type SessionsServiceStub struct {
+type TokenType int
+
+const (
+	access TokenType = iota
+	refresh
+)
+
+type SessionsService struct {
+	Db     models.ISessionDatabase
 	client *http.Client
-	secret string
+	secret []byte
 	Logger log.Logger
 }
 
 //NewSessionsService creates session service
-func NewSessionsService(s string) m.SessionService {
-	cl, _ := MakeHTTPClient()
+func NewSessionsService(db models.ISessionDatabase, s, key []byte) models.ISessionService {
+	cl, _ := MakeHTTPClient(key)
 
-	return &SessionsServiceStub{
+	return &SessionsService{
+		Db:     db,
 		client: cl,
 		secret: s,
-		Logger: cfg.GetLogger().Logger,
+		Logger: config.GetLogger().Logger,
 	}
 }
 
 //Build creates session service with middleware
-func Build(logger log.Logger, s string) m.SessionService {
-	var svc m.SessionService
+func Build(logger log.Logger, db models.ISessionDatabase, secret, pKey []byte) models.ISessionService {
+	var svc models.ISessionService
 	{
-		svc = NewSessionsService(s)
+		svc = NewSessionsService(db, secret, pKey)
 		svc = LoggingMiddleware(logger)(svc)
 	}
 
@@ -40,71 +50,108 @@ func Build(logger log.Logger, s string) m.SessionService {
 }
 
 //Login handles login requets
-func (sStub *SessionsServiceStub) Login(ctx context.Context, ld m.LoginData) (resAccess, resRefresh m.TokenData, err error) {
+func (svc *SessionsService) Login(ctx context.Context, ld models.LoginData) (resAccess, resRefresh models.TokenData, err error) {
 	//1. Authentificate user
-	err = sStub.EnsureUserCreds(ld.UserName, ld.Password)
+	err = svc.EnsureUserCreds(ld.UserName, ld.Password)
 	if err != nil {
-		sStub.Logger.Log("method", "EnsureUserCreds", "action", "checking user credentials", "error", err)
+		svc.Logger.Log("method", "EnsureUserCreds", "action", "checking user credentials", "error", err)
 		return resAccess, resRefresh, err
 	}
 
 	//2. Get user profile
-	profile, err := sStub.GetUserProfile(ld.UserName, sStub.secret)
+	profile, err := svc.GetUserProfile(ld.UserName, string(svc.secret))
 	if err != nil {
-		sStub.Logger.Log("method", "GetUserProfile", "action", "retrieving user profile", "error", err)
+		svc.Logger.Log("method", "GetUserProfile", "action", "retrieving user profile", "error", err)
 		return resAccess, resRefresh, err
 	}
 
 	//3. Create an access token
-	resAccess, err = sStub.GenerateToken("access", ld.UserName, profile.Role.Mask)
+	resAccess, err = svc.GenerateToken(access, ld.UserName, profile.Role.Mask)
 	if err != nil {
-		sStub.Logger.Log("method", "GetToken", "action", "generate access token", "error", err)
+		svc.Logger.Log("method", "GetToken", "action", "generate access token", "error", err)
 		return resAccess, resRefresh, err
 	}
 
-	resRefresh, err = sStub.GenerateToken("refresh", ld.UserName, profile.Role.Mask)
+	resRefresh, err = svc.GenerateToken(refresh, ld.UserName, profile.Role.Mask)
 	if err != nil {
-		sStub.Logger.Log("method", "GetToken", "action", "generate refresh token", "error", err)
+		svc.Logger.Log("method", "GetToken", "action", "generate refresh token", "error", err)
 		return resAccess, resRefresh, err
 	}
+
+	//4. Save token in db
+	svc.Db.Save(ld.UserName, resRefresh.Token)
 
 	return resAccess, resRefresh, nil
 }
 
 //Logout handles logout requets
-func (sStub *SessionsServiceStub) Logout(ctx context.Context, lod m.LogoutData) error {
-	//1. Get refresh token value from cookie
-	//2. Parse refresh token
-	//3. Restore session sensetive data from session database
-	//4. In handler layer decodeLogourResponse will set cookie within invalid refresh token
-	sStub.Logger.Log("Method", "Logout", "message", "service handler has been reached")
+func (svc *SessionsService) Logout(ctx context.Context, lod models.LogoutData) error {
+	var (
+		err           error
+		ok            bool
+		sub           string
+		refreshClaims jwt.MapClaims
+	)
+
+	//If a refresh token is invalid then nothing to delete from database. Just logging out a user
+	if refreshClaims, err = svc.CheckTokenValidness(lod.Cookie.Value); err != nil {
+		svc.Logger.Log("method", "Logout", "err", errors.ErrClientUnkown)
+		return err
+	}
+
+	if sub, ok = refreshClaims["sub"].(string); !ok {
+		svc.Logger.Log("method", "Logout", "err", errors.ErrClientUnkown)
+		return errors.ErrClientUnkown
+	}
+	svc.Db.Delete(sub, lod.Cookie.Value)
 	return nil
 }
 
 //CheckToken checks whether an access token is valid and regenerates it if so
-func (sStub *SessionsServiceStub) CheckToken(ctx context.Context, td m.CheckTokenServiceInput) (res m.CheckTokenServiceOutput, err error) {
-	sStub.Logger.Log("method", "CheckTokenAccess", "access", td.AccessToken, "refresh", td.RefreshToken)
+func (svc *SessionsService) CheckToken(ctx context.Context, td models.CheckTokenServiceInput) (res models.CheckTokenServiceOutput, err error) {
 	//1. Check whether tokens are valid (signed with HMAC method and our service secret)
-	accessTokenClaims, err := sStub.CheckTokenValidness(td.AccessToken)
+	accessTokenClaims, err := svc.CheckTokenValidness(td.AccessToken)
 	if err != nil {
-		sStub.Logger.Log("method", "After CheckTokenValidness")
 		return res, err
 	}
-
-	sStub.Logger.Log("method", "CheckTokenRefresh", "access", td.AccessToken, "refresh", td.RefreshToken)
-	refreshTokenClaims, err := sStub.CheckTokenValidness(td.RefreshToken)
+	refreshTokenClaims, err := svc.CheckTokenValidness(td.RefreshToken)
 	if err != nil {
 		return res, err
 	}
 
 	//2. Check expiration claim
-	atexp := IsExpired(accessTokenClaims)
-	rtexp := IsExpired(refreshTokenClaims)
+	atexp, err := IsExpired(accessTokenClaims)
+
+	if err != nil {
+		return res, err
+	}
+	rtexp, err := IsExpired(refreshTokenClaims)
+
+	if err != nil {
+		return res, err
+	}
+
 	if atexp && !rtexp {
-		//Access token is expired, refresh token is not expired. Regenerate an access token
-		sub := accessTokenClaims["sub"].(string)
-		mask := accessTokenClaims["mask"].(float64)
-		tokenData, err := sStub.GenerateToken("access", sub, int64(mask))
+		//Access token is expired, refresh token is not expired. Regenerate an access token if such token exist for current user
+		var (
+			ok   bool
+			sub  string
+			mask float64
+		)
+		if sub, ok = accessTokenClaims["sub"].(string); !ok {
+			return res, errors.ErrInvalidClaimInToken
+		}
+
+		if mask, ok = accessTokenClaims["mask"].(float64); !ok {
+			return res, errors.ErrInvalidClaimInToken
+		}
+
+		//Check refresh token existance
+		if ok = svc.Db.Exist(sub, td.RefreshToken); !ok {
+			return res, errors.ErrNonAuthorized
+		}
+
+		tokenData, err := svc.GenerateToken(access, sub, int64(mask))
 		if err != nil {
 			return res, err
 		}
@@ -115,7 +162,7 @@ func (sStub *SessionsServiceStub) CheckToken(ctx context.Context, td m.CheckToke
 	} else {
 		//Refresh token is expired
 		res.AccessToken = ""
-		err = e.ErrNonAuthorized
+		err = errors.ErrNonAuthorized
 	}
 
 	return res, err

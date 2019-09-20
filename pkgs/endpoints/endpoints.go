@@ -3,19 +3,19 @@ package endpoints
 import (
 	"context"
 
-	e "github.com/go-kit/kit/endpoint"
+	"github.com/go-kit/kit/endpoint"
 
-	m "github.com/Soroka-EDMS/svc/sessions/pkgs/models"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/models"
 )
 
 //Endpoints collects individually constructed endpoints into a single type. Each endpoint is a func that wraps corresponding function from service interface
 type SessionsEndpoints struct {
-	LoginEndpoint      e.Endpoint
-	LogoutEndpoint     e.Endpoint
-	CheckTokenEndpoint e.Endpoint
+	LoginEndpoint      endpoint.Endpoint
+	LogoutEndpoint     endpoint.Endpoint
+	CheckTokenEndpoint endpoint.Endpoint
 }
 
-func MakeServerEndpoints(s m.SessionService) SessionsEndpoints {
+func MakeServerEndpoints(s models.ISessionService) SessionsEndpoints {
 	return SessionsEndpoints{
 		LoginEndpoint:      BuildLoginEndpoint(s),
 		LogoutEndpoint:     BuildLogoutEndpoint(s),
@@ -23,21 +23,21 @@ func MakeServerEndpoints(s m.SessionService) SessionsEndpoints {
 	}
 }
 
-func BuildLoginEndpoint(svc m.SessionService) e.Endpoint {
+func BuildLoginEndpoint(svc models.ISessionService) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(LoginRequest)
 		at, rt, e := svc.Login(ctx, req.Req)
 		return LoginResponse{AccessToken: at, RefreshToken: rt, Err: e}, nil
 	}
 }
-func BuildLogoutEndpoint(svc m.SessionService) e.Endpoint {
+func BuildLogoutEndpoint(svc models.ISessionService) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(LogoutRequest)
 		e := svc.Logout(ctx, req.Req)
 		return LogoutResponse{Err: e}, nil
 	}
 }
-func BuildCheckTokenEndpoint(svc m.SessionService) e.Endpoint {
+func BuildCheckTokenEndpoint(svc models.ISessionService) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(CheckTokenRequest)
 		t, e := svc.CheckToken(ctx, req.Req)
@@ -46,25 +46,25 @@ func BuildCheckTokenEndpoint(svc m.SessionService) e.Endpoint {
 }
 
 type LoginRequest struct {
-	Req m.LoginData
+	Req models.LoginData
 }
 
 type LogoutRequest struct {
-	Req m.LogoutData
+	Req models.LogoutData
 }
 
 type LoginResponse struct {
-	AccessToken  m.TokenData
-	RefreshToken m.TokenData
+	AccessToken  models.TokenData
+	RefreshToken models.TokenData
 	Err          error
 }
 
 type CheckTokenRequest struct {
-	Req m.CheckTokenServiceInput
+	Req models.CheckTokenServiceInput
 }
 
 type CheckTokenResponse struct {
-	Req m.CheckTokenServiceOutput
+	Req models.CheckTokenServiceOutput
 	Err error
 }
 

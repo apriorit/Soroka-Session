@@ -9,22 +9,18 @@ import (
 	"strings"
 	"time"
 
-	b "encoding/base64"
+	"encoding/base64"
 
 	jwt "github.com/dgrijalva/jwt-go"
 
-	cf "github.com/Soroka-EDMS/svc/sessions/pkgs/config"
-	c "github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
-	e "github.com/Soroka-EDMS/svc/sessions/pkgs/errors"
-	m "github.com/Soroka-EDMS/svc/sessions/pkgs/models"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/errors"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/models"
 )
 
 //EnsureUserCreds sends authentification request to Users service
-func (sStub *SessionsServiceStub) EnsureUserCreds(username, password string) (err error) {
-
-	sStub.Logger.Log("method", "EnsureUserCreds", "username", username, "password", password)
-
-	req, err := http.NewRequest("GET", c.URIOnAuthentification, nil)
+func (sStub *SessionsService) EnsureUserCreds(username, password string) (err error) {
+	req, err := http.NewRequest("GET", constants.URIOnAuthentification, nil)
 	req.SetBasicAuth(username, password)
 
 	if err != nil {
@@ -40,9 +36,9 @@ func (sStub *SessionsServiceStub) EnsureUserCreds(username, password string) (er
 	case http.StatusOK:
 		break
 	case http.StatusUnauthorized:
-		return e.ErrNonAuthorized
+		return errors.ErrNonAuthorized
 	case http.StatusNotFound:
-		return e.ErrClientUnkown
+		return errors.ErrClientUnkown
 	default:
 		return fmt.Errorf("Authentification request failed with code: %v", resp.StatusCode)
 	}
@@ -50,61 +46,62 @@ func (sStub *SessionsServiceStub) EnsureUserCreds(username, password string) (er
 	return nil
 }
 
-//GetUserProfile query user profile by email from Users database
-func (sStub *SessionsServiceStub) GetUserProfile(email, token string) (profile m.UserProfile, err error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf(c.URIOnGetProfile, email), nil)
+//GetUserProfile sends a request to Users service to obtain user profile by his email
+func (sStub *SessionsService) GetUserProfile(email, token string) (profile models.UserProfile, err error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf(constants.URIOnGetProfile, email), nil)
 	if err != nil {
-		return m.UserProfile{}, err
+		return models.UserProfile{}, err
 	}
 
 	req.Header.Add("Authorization", "Bearer "+token)
 	resp, err := sStub.client.Do(req)
 	if err != nil {
-		return m.UserProfile{}, err
+		return models.UserProfile{}, err
 	}
 
 	switch resp.StatusCode {
 	case http.StatusOK:
 		break
 	case http.StatusBadRequest:
-		return m.UserProfile{}, e.ErrRequestToUsersFailed
+		return models.UserProfile{}, errors.ErrRequestToUsersFailed
 	case http.StatusUnauthorized:
-		return m.UserProfile{}, e.ErrNonAuthorized
+		return models.UserProfile{}, errors.ErrNonAuthorized
 	case http.StatusNotFound:
-		return m.UserProfile{}, e.ErrClientUnkown
+		return models.UserProfile{}, errors.ErrClientUnkown
 	default:
-		return m.UserProfile{}, fmt.Errorf("Get profile request failed with code: %v", resp.StatusCode)
+		return models.UserProfile{}, fmt.Errorf("Get profile request failed with code: %v", resp.StatusCode)
 	}
 
 	if !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
-		return m.UserProfile{}, fmt.Errorf("Get profile received content type: %v", resp.Header.Get("Content-Type"))
+		return models.UserProfile{}, fmt.Errorf("Get profile received content type: %v", resp.Header.Get("Content-Type"))
 	}
 
 	defer resp.Body.Close()
 	err = json.NewDecoder(resp.Body).Decode(&profile)
 
 	if err != nil {
-		return m.UserProfile{}, fmt.Errorf("Profile decoding failed")
+		return models.UserProfile{}, fmt.Errorf("Profile decoding failed")
 	}
 
 	return profile, nil
 }
 
 //GenerateToken generates and signs token according to toke type. Uses sgining method based on HS256
-func (sStub *SessionsServiceStub) GenerateToken(tokenType, id string, mask int64) (m.TokenData, error) {
+func (sStub *SessionsService) GenerateToken(tokenType TokenType, id string, mask int64) (models.TokenData, error) {
 	var err error
 
-	sStub.Logger.Log("Method", "GenerateToken", "Sign secret", sStub.secret)
-
-	claims, exp := CreatePayload(tokenType, id, c.TokenIssuer, mask)
+	claims, exp, err := CreatePayload(tokenType, id, constants.TokenIssuer, mask)
+	if err != nil {
+		return models.TokenData{}, err
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString([]byte(sStub.secret))
 
 	if err != nil {
-		return m.TokenData{}, err
+		return models.TokenData{}, err
 	}
 
-	return m.TokenData{
+	return models.TokenData{
 		Token:          tokenString,
 		Type:           "Bearer",
 		ExpirationDate: exp,
@@ -112,16 +109,19 @@ func (sStub *SessionsServiceStub) GenerateToken(tokenType, id string, mask int64
 }
 
 //CreatePayload returns claims for JWT. If token type is "access" it returns claims for access token, or for refresh token otherwise
-func CreatePayload(tokenType, cid, iss string, mask int64) (jwt.MapClaims, int64) {
+func CreatePayload(tokenType TokenType, cid, iss string, mask int64) (jwt.MapClaims, int64, error) {
 	var (
-		exp int64
-		iat int64
+		exp    int64
+		iat    int64
+		claims jwt.MapClaims
 	)
 
 	iat = time.Now().Unix()
-	if tokenType == "access" {
+
+	switch tokenType {
+	case access:
 		exp = time.Now().Add(time.Duration(24) * time.Hour).Unix()
-		return jwt.MapClaims{
+		claims = jwt.MapClaims{
 			"iss":  iss,                //token issue
 			"sub":  cid,                //user email
 			"iat":  iat,                //issued at
@@ -129,23 +129,26 @@ func CreatePayload(tokenType, cid, iss string, mask int64) (jwt.MapClaims, int64
 			"exp":  exp,                //expiration time
 			"mask": mask,               //user mask
 			"aud":  []string{cid, iss}, //audience claim. See: https://tools.ietf.org/html/rfc7519#
-		}, exp
+		}
+	case refresh:
+		exp = time.Now().Add(time.Duration(720) * time.Hour).Unix()
+		claims = jwt.MapClaims{
+			"iss": iss,                //token issue
+			"sub": cid,                //user email
+			"iat": iat,                //issued at
+			"nbf": iat,                //issued not before
+			"exp": exp,                //expiration time
+			"aud": []string{cid, iss}, //audience claim. See: https://tools.ietf.org/html/rfc7519#
+		}
+	default:
+		return jwt.MapClaims{}, 0, errors.ErrInvalidTokenType
 	}
 
-	exp = time.Now().Add(time.Duration(720) * time.Hour).Unix()
-	return jwt.MapClaims{
-		"iss": iss,
-		"sub": cid,
-		"iat": iat,
-		"nbf": iat,
-		"exp": exp,
-		"aud": []string{cid, iss},
-	}, exp
+	return claims, exp, nil
 }
 
 //CheckTokenValidness parses token and return its claims if token is valid. There is a 'Valid' flag in token that is triggered when using jwt.Parse
-func (sStub *SessionsServiceStub) CheckTokenValidness(tokenString string) (jwt.MapClaims, error) {
-	sStub.Logger.Log("method", "CheckTokenValidness", "begin", "begin")
+func (sStub *SessionsService) CheckTokenValidness(tokenString string) (jwt.MapClaims, error) {
 	//Get raw token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -156,37 +159,53 @@ func (sStub *SessionsServiceStub) CheckTokenValidness(tokenString string) (jwt.M
 		return []byte(sStub.secret), nil
 	})
 
+	if token == nil {
+		return jwt.MapClaims{}, errors.ErrNonAuthorized
+	}
+
 	//Check token validness
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		sStub.Logger.Log("method", "CheckTokenValidness", "begin3", "begin3")
 		return claims, nil
 	}
 
 	//Log and return error if token is invalid
 	sStub.Logger.Log("method", "GetRawToken", "err", err)
-	return jwt.MapClaims{}, e.ErrNonAuthorized
+	return jwt.MapClaims{}, errors.ErrNonAuthorized
 }
 
 //IsExpired checks whether a token is expired
-func IsExpired(claims jwt.MapClaims) bool {
-	return claims.Valid() != nil
+func IsExpired(claims jwt.MapClaims) (bool, error) {
+	if claims == nil {
+		return true, errors.ErrInvalidClaimInToken
+	}
+
+	exp := claims["exp"]
+	var expValue int64
+
+	switch v := exp.(type) {
+	case float64:
+		expValue = int64(v)
+	case int64:
+		expValue = v
+	default:
+		return false, errors.ErrInvalidClaimInToken
+	}
+
+	return time.Now().Unix() > expValue, nil
 }
 
 //EncodeSessionSecret encodes session secret to base64 string
 func EncodeSessionSecret(s string) (encoded string) {
-	return b.StdEncoding.EncodeToString([]byte(s))
+	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
-func MakeHTTPClient() (*http.Client, error) {
-	//Get public key
-	pkey := cf.GetPublicKey()
-
-	if len(pkey) == 0 {
-		return nil, e.ErrPublicKeyIsMissing
+func MakeHTTPClient(pKey []byte) (*http.Client, error) {
+	if len(pKey) == 0 {
+		return nil, errors.ErrPublicKeyIsMissing
 	}
 
 	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(pkey)
+	caCertPool.AppendCertsFromPEM(pKey)
 
 	client := &http.Client{
 		Transport: &http.Transport{

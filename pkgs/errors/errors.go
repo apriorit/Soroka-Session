@@ -3,20 +3,22 @@ package errors
 import (
 	"errors"
 
-	c "github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
 )
 
 var (
-	ErrMissingBody          = errors.New(c.MissingBody)
-	ErrMisingRefreshToken   = errors.New(c.MissingRefreshToken)
-	ErrExpiredRefreshToken  = errors.New(c.ExpiredRefreshToken)
-	ErrExpiredAccessToken   = errors.New(c.ExpiredAccessToken)
-	ErrNoPermissions        = errors.New(c.NoPermissions)
-	ErrMalformedBody        = errors.New(c.MalformedBody)
-	ErrEncoding             = errors.New(c.Encoding)
-	ErrNonAuthorized        = errors.New(c.NonAuthorized)
-	ErrRequestToUsersFailed = errors.New(c.RequestToUsersFailed)
-	ErrClientUnkown         = errors.New(c.ClientUnkown)
-	ErrFailedToCreateJWT    = errors.New(c.FailedToCreateJWT)
-	ErrPublicKeyIsMissing   = errors.New(c.PublicKeyIsMissing)
+	ErrMissingBody          = errors.New(constants.MissingBody)
+	ErrMisingRefreshToken   = errors.New(constants.MissingRefreshToken)
+	ErrExpiredRefreshToken  = errors.New(constants.ExpiredRefreshToken)
+	ErrExpiredAccessToken   = errors.New(constants.ExpiredAccessToken)
+	ErrNoPermissions        = errors.New(constants.NoPermissions)
+	ErrMalformedBody        = errors.New(constants.MalformedBody)
+	ErrEncoding             = errors.New(constants.Encoding)
+	ErrNonAuthorized        = errors.New(constants.NonAuthorized)
+	ErrRequestToUsersFailed = errors.New(constants.RequestToUsersFailed)
+	ErrClientUnkown         = errors.New(constants.ClientUnkown)
+	ErrInvalidClaimInToken  = errors.New(constants.InvalidClaimInToken)
+	ErrFailedToCreateJWT    = errors.New(constants.FailedToCreateJWT)
+	ErrPublicKeyIsMissing   = errors.New(constants.PublicKeyIsMissing)
+	ErrInvalidTokenType     = errors.New(constants.InvalidTokenType)
 )

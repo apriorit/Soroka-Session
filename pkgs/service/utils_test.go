@@ -7,31 +7,31 @@ import (
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/stretchr/testify/assert"
 
-	conf "github.com/Soroka-EDMS/svc/sessions/pkgs/config"
-	c "github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/config"
+	"github.com/Soroka-EDMS/svc/sessions/pkgs/constants"
 )
 
 func TestCreatePayload_Access(t *testing.T) {
-	testPayload, exp := CreatePayload("access", "user@example.com", c.TokenIssuer, 2048)
-
+	testPayload, exp, err := CreatePayload(access, "user@example.com", constants.TokenIssuer, 2048)
+	assert.NoError(t, err)
 	assert.NoError(t, testPayload.Valid())
-	assert.True(t, testPayload.VerifyIssuer(c.TokenIssuer, true))
+	assert.True(t, testPayload.VerifyIssuer(constants.TokenIssuer, true))
 	assert.NotZero(t, exp)
 }
 
 func TestCreatePayload_Refresh(t *testing.T) {
-	testPayload, exp := CreatePayload("refresh", "user@example.com", c.TokenIssuer, 2048)
-
+	testPayload, exp, err := CreatePayload(refresh, "user@example.com", constants.TokenIssuer, 2048)
+	assert.NoError(t, err)
 	assert.NoError(t, testPayload.Valid())
-	assert.True(t, testPayload.VerifyIssuer(c.TokenIssuer, true))
+	assert.True(t, testPayload.VerifyIssuer(constants.TokenIssuer, true))
 	assert.NotZero(t, exp)
 }
 
 func TestGenerateToken_Access(t *testing.T) {
-	sStub := SessionsServiceStub{
+	sStub := SessionsService{
 		client: &http.Client{},
-		secret: "secret",
-		Logger: conf.GetLogger().Logger,
+		secret: []byte("secret"),
+		Logger: config.GetLogger().Logger,
 	}
 
 	var testData = struct {
@@ -46,7 +46,7 @@ func TestGenerateToken_Access(t *testing.T) {
 		2048,
 	}
 
-	tokenServiceData, err := sStub.GenerateToken("access", "user@example.com", 2048)
+	tokenServiceData, err := sStub.GenerateToken(access, "user@example.com", 2048)
 	assert.NoError(t, err)
 	assert.NotEqual(t, tokenServiceData.Token, "")
 
@@ -61,7 +61,7 @@ func TestGenerateToken_Access(t *testing.T) {
 	//Check nbf, exp and iat claims
 	assert.NoError(t, claims.Valid())
 	//Check the number of claims
-	assert.Equal(t, len(claims), c.ClaimsPerAccessToken)
+	assert.Equal(t, len(claims), constants.ClaimsPerAccessToken)
 
 	maskClaim, ok := claims["mask"].(float64)
 	assert.True(t, ok)
@@ -73,10 +73,10 @@ func TestGenerateToken_Access(t *testing.T) {
 }
 
 func TestGenerateToken_Refresh(t *testing.T) {
-	sStub := SessionsServiceStub{
+	sStub := SessionsService{
 		client: &http.Client{},
-		secret: "secret",
-		Logger: conf.GetLogger().Logger,
+		secret: []byte("secret"),
+		Logger: config.GetLogger().Logger,
 	}
 
 	var testData = struct {
@@ -89,7 +89,7 @@ func TestGenerateToken_Refresh(t *testing.T) {
 		[]string{"user@example.com", "https://edms.com/sessions"},
 	}
 
-	token, err := sStub.GenerateToken("refresh", "user@example.com", 2048)
+	token, err := sStub.GenerateToken(refresh, "user@example.com", 2048)
 	assert.NoError(t, err)
 	assert.NotEqual(t, token.Token, "")
 
@@ -102,7 +102,7 @@ func TestGenerateToken_Refresh(t *testing.T) {
 	//Check nbf, exp and iat claims
 	assert.NoError(t, claims.Valid())
 	//Check the number of claims
-	assert.Equal(t, len(claims), c.ClaimsPerRefreshToken)
+	assert.Equal(t, len(claims), constants.ClaimsPerRefreshToken)
 
 	//Check other claims
 	assert.Equal(t, testData.sub, claims["sub"])
@@ -110,16 +110,31 @@ func TestGenerateToken_Refresh(t *testing.T) {
 }
 
 func TestCheckTokenValidness_ValidTokenValidClaim(t *testing.T) {
-	sStub := SessionsServiceStub{
+	sStub := SessionsService{
 		client: &http.Client{},
-		secret: "secret",
-		Logger: conf.GetLogger().Logger,
+		secret: []byte("secret"),
+		Logger: config.GetLogger().Logger,
 	}
-	tokenServiceData, err := sStub.GenerateToken("access", "user@example.com", 2048)
+	tokenServiceData, err := sStub.GenerateToken(access, "user@example.com", 2048)
 	assert.NoError(t, err)
-
 	claims, err := sStub.CheckTokenValidness(tokenServiceData.Token)
 	assert.NoError(t, err)
+	flag, err := IsExpired(claims)
+	assert.NoError(t, err)
+	assert.False(t, flag)
+}
 
-	assert.False(t, IsExpired(claims))
+func TestCheckTokenValidness_InvalidToken(t *testing.T) {
+	invalidToken := "Z2xhZHlzLmNoYW1wbEBlZG1zLmNvbTphQG0xbg"
+	sStub := SessionsService{
+		client: &http.Client{},
+		secret: []byte("secret"),
+		Logger: config.GetLogger().Logger,
+	}
+
+	claims, err := sStub.CheckTokenValidness(invalidToken)
+	assert.Error(t, err)
+	flag, err := IsExpired(claims)
+	assert.Error(t, err)
+	assert.False(t, flag)
 }

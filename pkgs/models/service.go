@@ -8,11 +8,9 @@ package models
 import (
 	"context"
 	"net/http"
-
-	_ "github.com/hashicorp/go-multierror"
 )
 
-type SessionService interface {
+type ISessionService interface {
 	Login(cntx context.Context, request LoginData) (resAccess, resRefresh TokenData, err error)
 	Logout(cntx context.Context, request LogoutData) error
 	CheckToken(cntx context.Context, request CheckTokenServiceInput) (res CheckTokenServiceOutput, err error)

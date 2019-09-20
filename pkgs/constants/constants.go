@@ -17,8 +17,10 @@ const (
 	MalformedBody         string = "Malformed content in request body"
 	Encoding              string = "An error occured while enconding response"
 	NonAuthorized         string = "Required authorization"
-	ClientUnkown          string = "Client are unknown"
+	ClientUnkown          string = "Client is unknown"
 	FailedToCreateJWT     string = "Failed to create JWT"
+	InvalidClaimInToken   string = "Invalid claim in token"
+	InvalidTokenType      string = "Invalid token type"
 	ClaimsPerAccessToken  int    = 7
 	ClaimsPerRefreshToken int    = 6
 )
