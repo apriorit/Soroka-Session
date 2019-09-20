@@ -41,8 +41,8 @@ func (db *SessionsDbStub) Exist(userID string, token string) (flag bool) {
 		t  string
 	)
 
-	db.Mtx.Lock()
-	defer db.Mtx.Unlock()
+	db.Mtx.RLock()
+	defer db.Mtx.RUnlock()
 
 	if t, ok = db.Tokens[userID]; !ok || token != t {
 		return false
