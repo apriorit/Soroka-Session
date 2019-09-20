@@ -1,0 +1,3 @@
+FROM consul
+
+ENV CONSUL_BIND_INTERFACE eth0
