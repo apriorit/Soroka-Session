@@ -25,11 +25,11 @@ func (db *SessionsDbStub) Save(userID string, token string) (err error) {
 func (db *SessionsDbStub) Get(userID string) (token string, err error) {
 	var ok bool
 
-	db.Mtx.Lock()
-	defer db.Mtx.Unlock()
+	db.Mtx.RLock()
+	defer db.Mtx.RUnlock()
 
 	if token, ok = db.Tokens[userID]; !ok {
-		return "", errors.ErrClientUnkown
+		return "", errors.ErrClientUnknown
 	}
 
 	return token, nil

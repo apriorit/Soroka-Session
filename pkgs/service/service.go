@@ -95,13 +95,13 @@ func (svc *SessionsService) Logout(ctx context.Context, lod models.LogoutData) e
 
 	//If a refresh token is invalid then nothing to delete from database. Just logging out a user
 	if refreshClaims, err = svc.CheckTokenValidness(lod.Cookie.Value); err != nil {
-		svc.Logger.Log("method", "Logout", "err", errors.ErrClientUnkown)
+		svc.Logger.Log("method", "Logout", "err", errors.ErrClientUnknown)
 		return err
 	}
 
 	if sub, ok = refreshClaims["sub"].(string); !ok {
-		svc.Logger.Log("method", "Logout", "err", errors.ErrClientUnkown)
-		return errors.ErrClientUnkown
+		svc.Logger.Log("method", "Logout", "err", errors.ErrClientUnknown)
+		return errors.ErrClientUnknown
 	}
 	svc.Db.Delete(sub, lod.Cookie.Value)
 	return nil

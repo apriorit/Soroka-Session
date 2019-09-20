@@ -38,7 +38,7 @@ func (sStub *SessionsService) EnsureUserCreds(username, password string) (err er
 	case http.StatusUnauthorized:
 		return errors.ErrNonAuthorized
 	case http.StatusNotFound:
-		return errors.ErrClientUnkown
+		return errors.ErrClientUnknown
 	default:
 		return fmt.Errorf("Authentification request failed with code: %v", resp.StatusCode)
 	}
@@ -67,7 +67,7 @@ func (sStub *SessionsService) GetUserProfile(email, token string) (profile model
 	case http.StatusUnauthorized:
 		return models.UserProfile{}, errors.ErrNonAuthorized
 	case http.StatusNotFound:
-		return models.UserProfile{}, errors.ErrClientUnkown
+		return models.UserProfile{}, errors.ErrClientUnknown
 	default:
 		return models.UserProfile{}, fmt.Errorf("Get profile request failed with code: %v", resp.StatusCode)
 	}
